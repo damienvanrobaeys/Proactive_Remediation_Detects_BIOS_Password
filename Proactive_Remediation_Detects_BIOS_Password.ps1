@@ -1,27 +1,61 @@
-$Get_Manufacturer_Info = (gwmi win32_computersystem).Manufacturer
-If($Get_Manufacturer_Info -like "*HP*")
-	{
-		$IsPasswordSet = (Get-WmiObject -Namespace root/hp/InstrumentedBIOS -Class HP_BIOSSetting | Where-Object Name -eq "Setup Password").IsSet
-	} 
-ElseIf($Get_Manufacturer_Info -like "*Lenovo*")
-	{
-		$IsPasswordSet = (gwmi -Class Lenovo_BiosPasswordSettings -Namespace root\wmi -ComputerName $computer).PasswordState
-	} 
-ElseIf($Get_Manufacturer_Info -like "*Dell*")
-	{
-		$module_name = "DellBIOSProvider"
-		If (Get-Module -ListAvailable -Name $module_name){import-module $module_name -Force} 
-		Else{Install-Module -Name DellBIOSProvider -Force}	
-		$IsPasswordSet = (Get-Item -Path DellSmbios:\Security\IsAdminPasswordSet).currentvalue 	
-	} 
+$ComputerManufacturer = (Get-WmiObject -Class "Win32_ComputerSystem" | Select-Object -ExpandProperty Manufacturer).Trim()
+switch -Wildcard ($ComputerManufacturer)
+{
+    "*HP*"
+    {
+        $IsPasswordSet = (Get-WmiObject -Namespace root/hp/InstrumentedBIOS -Class HP_BIOSSetting | Where-Object Name -eq "Setup Password").IsSet
+    }
+    "*Hewlett-Packard*"
+    {
+        $IsPasswordSet = (Get-WmiObject -Namespace root/hp/InstrumentedBIOS -Class HP_BIOSSetting | Where-Object Name -eq "Setup Password").IsSet
+    }
+    "*Lenovo*"
+    {
+        $IsPasswordSet = (Get-WmiObject -Namespace root/wmi -Class Lenovo_BiosPasswordSettings).PasswordState
+    }
+    "*Dell*"
+    {
+        $CurrentExecutionPolicy = Get-ExecutionPolicy
+        Set-ExecutionPolicy Unrestricted
+        $RequiredModules = @("NuGet","DellBIOSProvider")
+        $RequiredModules | ForEach-Object {
+            If (Get-Module -ListAvailable -Name $PSItem)
+            {
+                Import-Module $PSItem -Force
+            }
+            Else
+            {
+                Install-Module -Name $PSItem -Force -Confirm
+            }
+            Start-Sleep -Seconds 5
+        }
+		
+		$IsPasswordSet = (Get-Item -Path DellSmbios:\Security\IsAdminPasswordSet).currentvalue
+        Set-ExecutionPolicy $CurrentExecutionPolicy
+    }
+}
 
-If(($IsPasswordSet -eq 1) -or ($IsPasswordSet -eq "true") -and ($IsPasswordSet -eq 2))
-	{
-		write-output "Your BIOS is password protected"	
+
+switch ($IsPasswordSet)
+{
+    "1"
+    {
+        Write-Output "Your BIOS is password protected"	
 		Exit 0
-	}
-Else
-	{
-		write-output "Your BIOS is not password protected"	
+    }
+    "2"
+    {
+        Write-Output "Your BIOS is password protected"	
+		Exit 0
+    }
+    "True"
+    {
+        Write-Output "Your BIOS is password protected"	
+		Exit 0
+    }
+    default
+    {
+        Write-Output "Your BIOS is not password protected"	
 		Exit 1
-	}
+    }
+}
